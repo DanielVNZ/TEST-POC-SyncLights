@@ -152,6 +152,7 @@ namespace SyncLights
         {
             try
             {
+                // Yo Sam if you read this, this doesnt work. Idk how to make this persistant lol
                 string localLowPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "LocalLow");
                 string modsDataPath = Path.Combine(localLowPath, "Colossal Order", "Cities Skylines II", "ModsData", "SyncLights");
                 string filePath = Path.Combine(modsDataPath, "intersection_pairings.txt");
