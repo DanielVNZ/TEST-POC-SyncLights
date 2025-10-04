@@ -11,6 +11,7 @@ using System.IO;
 using System.Linq;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 
 namespace SyncLights
 {
@@ -22,6 +23,7 @@ namespace SyncLights
 
         private ComponentLookup<TrafficLights> m_TrafficLightsData;
         private ComponentLookup<TrafficLight> m_TrafficLightData;
+        private ComponentLookup<Node> m_NodeData;
         private readonly List<IntersectionPairing> m_Pairings = new();
         private float m_LastFileCheckTime = 0f;
         private float m_LastSyncLogTime = 0f;
@@ -52,12 +54,14 @@ namespace SyncLights
 
             m_TrafficLightsData = GetComponentLookup<TrafficLights>();
             m_TrafficLightData = GetComponentLookup<TrafficLight>();
+            m_NodeData = GetComponentLookup<Node>();
         }
 
         protected override void OnUpdate()
         {
             m_TrafficLightsData.Update(this);
             m_TrafficLightData.Update(this);
+            m_NodeData.Update(this);
 
             // Check for new pairings periodically
             if (UnityEngine.Time.time - m_LastFileCheckTime > FILE_CHECK_INTERVAL)
@@ -90,8 +94,8 @@ namespace SyncLights
 
             foreach (var pairing in m_Pairings)
             {
-                Entity primaryEntity = FindEntityByIndex(pairing.PrimaryIntersection);
-                Entity secondaryEntity = FindEntityByIndex(pairing.SecondaryIntersection);
+                Entity primaryEntity = FindEntityByPosition(pairing.PrimaryPosition);
+                Entity secondaryEntity = FindEntityByPosition(pairing.SecondaryPosition);
 
                 if (primaryEntity != Entity.Null && secondaryEntity != Entity.Null)
                 {
@@ -128,20 +132,12 @@ namespace SyncLights
 
                 foreach (var pairing in m_Pairings)
                 {
-                    bool primaryFound = false;
-                    bool secondaryFound = false;
+                    Entity primaryEntity = FindEntityByPosition(pairing.PrimaryPosition);
+                    Entity secondaryEntity = FindEntityByPosition(pairing.SecondaryPosition);
 
-                    for (int i = 0; i < entities.Length; i++)
-                    {
-                        if (entities[i].Index == pairing.PrimaryIntersection)
-                            primaryFound = true;
-                        if (entities[i].Index == pairing.SecondaryIntersection)
-                            secondaryFound = true;
-                    }
-
-                    log.Info($"🔍 DEBUG: Pairing {pairing.PrimaryIntersection} ↔ {pairing.SecondaryIntersection}");
-                    log.Info($"🔍 DEBUG: Primary {pairing.PrimaryIntersection} found: {primaryFound}");
-                    log.Info($"🔍 DEBUG: Secondary {pairing.SecondaryIntersection} found: {secondaryFound}");
+                    log.Info($"🔍 DEBUG: Pairing {pairing.PrimaryPosition} ↔ {pairing.SecondaryPosition}");
+                    log.Info($"🔍 DEBUG: Primary at {pairing.PrimaryPosition} found: {primaryEntity != Entity.Null}");
+                    log.Info($"🔍 DEBUG: Secondary at {pairing.SecondaryPosition} found: {secondaryEntity != Entity.Null}");
                 }
 
                 entities.Dispose();
@@ -152,7 +148,6 @@ namespace SyncLights
         {
             try
             {
-                // Yo Sam if you read this, this doesnt work. Idk how to make this persistant lol
                 string localLowPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "LocalLow");
                 string modsDataPath = Path.Combine(localLowPath, "Colossal Order", "Cities Skylines II", "ModsData", "SyncLights");
                 string filePath = Path.Combine(modsDataPath, "intersection_pairings.txt");
@@ -170,15 +165,20 @@ namespace SyncLights
                     if (string.IsNullOrWhiteSpace(line)) continue;
 
                     string[] parts = line.Split(',');
-                    if (parts.Length >= 2)
+                    if (parts.Length >= 7) // 3 positions + 3 positions + timestamp
                     {
-                        if (int.TryParse(parts[0], out int primary) && int.TryParse(parts[1], out int secondary))
+                        if (float.TryParse(parts[0], out float primaryX) &&
+                            float.TryParse(parts[1], out float primaryY) &&
+                            float.TryParse(parts[2], out float primaryZ) &&
+                            float.TryParse(parts[3], out float secondaryX) &&
+                            float.TryParse(parts[4], out float secondaryY) &&
+                            float.TryParse(parts[5], out float secondaryZ))
                         {
                             var pairing = new IntersectionPairing
                             {
-                                PrimaryIntersection = primary,
-                                SecondaryIntersection = secondary,
-                                CreatedAt = parts.Length > 2 ? parts[2] : "Unknown"
+                                PrimaryPosition = new float3(primaryX, primaryY, primaryZ),
+                                SecondaryPosition = new float3(secondaryX, secondaryY, secondaryZ),
+                                CreatedAt = parts.Length > 6 ? parts[6] : "Unknown"
                             };
                             newPairings.Add(pairing);
                         }
@@ -193,7 +193,7 @@ namespace SyncLights
 
                     foreach (var pairing in m_Pairings)
                     {
-                        log.Info($"📋 Pairing: {pairing.PrimaryIntersection} ↔ {pairing.SecondaryIntersection}");
+                        log.Info($"📋 Pairing: {pairing.PrimaryPosition} ↔ {pairing.SecondaryPosition}");
                     }
                 }
             }
@@ -215,8 +215,8 @@ namespace SyncLights
 
             foreach (var pairing in m_Pairings)
             {
-                Entity primaryEntity = FindEntityByIndex(pairing.PrimaryIntersection);
-                Entity secondaryEntity = FindEntityByIndex(pairing.SecondaryIntersection);
+                Entity primaryEntity = FindEntityByPosition(pairing.PrimaryPosition);
+                Entity secondaryEntity = FindEntityByPosition(pairing.SecondaryPosition);
 
                 if (primaryEntity != Entity.Null && secondaryEntity != Entity.Null)
                 {
@@ -227,15 +227,15 @@ namespace SyncLights
                     if (UnityEngine.Time.time - m_LastSyncLogTime > SYNC_LOG_INTERVAL)
                     {
                         if (primaryEntity == Entity.Null)
-                            log.Info($"⚠️ Primary intersection {pairing.PrimaryIntersection} not found");
+                            log.Info($"⚠️ Primary intersection at {pairing.PrimaryPosition} not found");
                         if (secondaryEntity == Entity.Null)
-                            log.Info($"⚠️ Secondary intersection {pairing.SecondaryIntersection} not found");
+                            log.Info($"⚠️ Secondary intersection at {pairing.SecondaryPosition} not found");
                     }
                 }
             }
         }
 
-        private Entity FindEntityByIndex(int entityIndex)
+        private Entity FindEntityByPosition(float3 position)
         {
             var query = GetEntityQuery(
                 ComponentType.ReadWrite<TrafficLights>(),
@@ -246,18 +246,24 @@ namespace SyncLights
             );
 
             var entities = query.ToEntityArray(Allocator.Temp);
+            var nodeData = query.ToComponentDataArray<Node>(Allocator.Temp);
+
             Entity foundEntity = Entity.Null;
+            float closestDistance = float.MaxValue;
+            const float TOLERANCE = 0.1f; // 10cm tolerance for position matching
 
             for (int i = 0; i < entities.Length; i++)
             {
-                if (entities[i].Index == entityIndex)
+                float distance = math.distance(nodeData[i].m_Position, position);
+                if (distance < TOLERANCE && distance < closestDistance)
                 {
                     foundEntity = entities[i];
-                    break;
+                    closestDistance = distance;
                 }
             }
 
             entities.Dispose();
+            nodeData.Dispose();
             return foundEntity;
         }
 

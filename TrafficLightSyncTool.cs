@@ -13,6 +13,7 @@ using System.Text;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;
+using Unity.Mathematics;
 using UnityEngine.Scripting;
 
 namespace SyncLights
@@ -25,6 +26,7 @@ namespace SyncLights
 
         private NativeList<Entity> m_SelectedIntersections;
         private ComponentLookup<TrafficLights> m_TrafficLightsData;
+        private ComponentLookup<Node> m_NodeData;
         private Entity m_LastHoveredEntity = Entity.Null;
 
         public override string toolID => "Traffic Light Sync Tool";
@@ -37,6 +39,7 @@ namespace SyncLights
 
             m_SelectedIntersections = new NativeList<Entity>(2, Allocator.Persistent);
             m_TrafficLightsData = GetComponentLookup<TrafficLights>();
+            m_NodeData = GetComponentLookup<Node>();
         }
 
         protected override void OnDestroy()
@@ -83,6 +86,7 @@ namespace SyncLights
             }
 
             m_TrafficLightsData.Update(this);
+            m_NodeData.Update(this);
 
             // Check for clicks using the existing apply action
             if (base.applyAction.WasPressedThisFrame())
@@ -186,15 +190,19 @@ namespace SyncLights
         {
             if (m_SelectedIntersections.Length == 2)
             {
+                // Get the positions from the Node components
+                var primaryNode = m_NodeData[m_SelectedIntersections[0]];
+                var secondaryNode = m_NodeData[m_SelectedIntersections[1]];
+
                 var pairing = new IntersectionPairing
                 {
-                    PrimaryIntersection = m_SelectedIntersections[0].Index,
-                    SecondaryIntersection = m_SelectedIntersections[1].Index,
+                    PrimaryPosition = primaryNode.m_Position,
+                    SecondaryPosition = secondaryNode.m_Position,
                     CreatedAt = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
                 };
 
                 SavePairingToFile(pairing);
-                log.Info($"💾 Saved intersection pairing: {pairing.PrimaryIntersection} ↔ {pairing.SecondaryIntersection}");
+                log.Info($"💾 Saved intersection pairing: {pairing.PrimaryPosition} ↔ {pairing.SecondaryPosition}");
             }
             else
             {
@@ -206,19 +214,18 @@ namespace SyncLights
         {
             try
             {
-                // Use the correct path to LocalLow instead of Local/Low
                 string localLowPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "LocalLow");
                 string modsDataPath = Path.Combine(localLowPath, "Colossal Order", "Cities Skylines II", "ModsData", "SyncLights");
                 Directory.CreateDirectory(modsDataPath);
 
                 string filePath = Path.Combine(modsDataPath, "intersection_pairings.txt");
 
-                // Simple text format: PrimaryIntersection,SecondaryIntersection,CreatedAt
-                string line = $"{pairing.PrimaryIntersection},{pairing.SecondaryIntersection},{pairing.CreatedAt}";
+                // Format: PrimaryX,PrimaryY,PrimaryZ,SecondaryX,SecondaryY,SecondaryZ,CreatedAt
+                string line = $"{pairing.PrimaryPosition.x},{pairing.PrimaryPosition.y},{pairing.PrimaryPosition.z}," +
+                             $"{pairing.SecondaryPosition.x},{pairing.SecondaryPosition.y},{pairing.SecondaryPosition.z}," +
+                             $"{pairing.CreatedAt}";
 
-                // Append to file
                 File.AppendAllText(filePath, line + Environment.NewLine);
-
                 log.Info($"✅ Saved pairing to: {filePath}");
             }
             catch (Exception ex)
@@ -258,8 +265,8 @@ namespace SyncLights
     // Data class for intersection pairings
     public class IntersectionPairing
     {
-        public int PrimaryIntersection { get; set; }
-        public int SecondaryIntersection { get; set; }
+        public float3 PrimaryPosition { get; set; }
+        public float3 SecondaryPosition { get; set; }
         public string CreatedAt { get; set; }
     }
 }
